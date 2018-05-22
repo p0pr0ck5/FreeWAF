@@ -13,7 +13,6 @@ local storage       = require "resty.waf.storage"
 local transform_t   = require "resty.waf.transform"
 local translate     = require "resty.waf.translate"
 local util          = require "resty.waf.util"
-
 local table_insert = table.insert
 local table_sort   = table.sort
 local string_lower = string.lower
@@ -88,8 +87,8 @@ local function _parse_collection(self, collection, var)
 		return collection
 	end
 
-	local key   = parse[1]
-	local value = parse[2]
+	local key   = parse[1]--"all"
+	local value = parse[2]-- 1
 
 	-- if this var has an ignore, we need to copy this collection table
 	-- as we're going to be removing some of its elements, so we can no
@@ -116,10 +115,12 @@ end
 -- all event logs will be written out at the completion of the transaction if either:
 -- 1. the transaction was altered (e.g. a rule matched with an ACCEPT or DENY action), or
 -- 2. the event_log_altered_only option is unset
-local function _log_event(self, rule, value, ctx)
+local function _log_event(self, rule, value, ctx, match_var, match_var_name)
 	local t = {
 		id    = rule.id,
-		match = value
+		match = value,
+		match_var = match_var,
+		match_var_name= match_var_name,
 	}
 
 	if rule.msg then
@@ -209,7 +210,7 @@ local function _do_transform(self, collection, transform)
 				return collection -- dont transform if the collection was nil, i.e. a specific arg key dne
 			end
 
-			--_LOG_"doing transform of type " .. transform .. " on collection value " .. tostring(collection)
+			if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "doing transform of type " .. transform .. " on collection value " .. tostring(collection)) end
 			return transform_t.lookup[transform](self, collection)
 		end
 	end
@@ -225,10 +226,10 @@ local function _build_collection(self, rule, var, collections, ctx, opts)
 	local collection_key = var.collection_key
 	local collection
 
-	--_LOG_"Checking for collection_key " .. collection_key
+	if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Checking for collection_key " .. collection_key) end
 
 	if not var.storage and not ctx.transform_key[collection_key] then
-		--_LOG_"Collection cache miss"
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Collection cache miss") end
 		collection = _parse_collection(self, collections[var.type], var)
 
 		if opts.transform then
@@ -238,10 +239,10 @@ local function _build_collection(self, rule, var, collections, ctx, opts)
 		ctx.transform[collection_key]     = collection
 		ctx.transform_key[collection_key] = true
 	elseif var.storage then
-		--_LOG_"Forcing cache miss"
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Forcing cache miss") end
 		collection = _parse_collection(self, collections[var.type], var)
 	else
-		--_LOG_"Collection cache hit!"
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Collection cache hit!") end
 		collection = ctx.transform[collection_key]
 	end
 
@@ -278,23 +279,22 @@ local function _process_rule(self, rule, collections, ctx)
 		end
 
 		local collection = _build_collection(self, rule, var, collections, ctx, opts)
-
 		if not collection then
-			--_LOG_"No values for this collection"
+			if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "No values for this collection") end
 			offset = rule.offset_nomatch
 		else
 			if opts.parsepattern then
-				--_LOG_"Parsing dynamic pattern: " .. pattern
+				if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Parsing dynamic pattern: " .. pattern) end
 				pattern = util.parse_dynamic_value(self, pattern, collections)
 			end
 
-			local match, value
+			local match, value, match_var
 
 			if var.unconditional then
 				match = true
 				value = 1
 			else
-				match, value = operators.lookup[rule.operator](self, collection, pattern, ctx)
+				match, value, match_var = operators.lookup[rule.operator](self, collection, pattern, ctx)
 			end
 
 			if rule.op_negated then
@@ -302,12 +302,11 @@ local function _process_rule(self, rule, collections, ctx)
 			end
 
 			if match then
-				--_LOG_"Match of rule " .. rule.id
+				if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Match of rule " .. rule.id) end
 
 				-- store this match as the most recent match
 				collections.MATCHED_VAR      = value or ''
 				collections.MATCHED_VAR_NAME = var.type
-
 				-- also add the match to our list of matches for the transaction
 				if value then
 					local match_n = ctx.match_n + 1
@@ -336,7 +335,8 @@ local function _process_rule(self, rule, collections, ctx)
 
 				-- log the event
 				if rule.actions.disrupt ~= "CHAIN" and not opts.nolog then
-					_log_event(self, rule, value, ctx)
+
+					_log_event(self, rule, value, ctx, match_var, collections.MATCHED_VAR_NAME)
 				end
 
 				-- wrapper for the rules action
@@ -351,7 +351,7 @@ local function _process_rule(self, rule, collections, ctx)
 		end
 	end
 
-	--_LOG_"Returning offset " .. tostring(offset)
+	if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Returning offset " .. tostring(offset)) end
 	return offset
 end
 
@@ -383,12 +383,12 @@ local function _merge_rulesets(self)
 		local ignored = self._ignore_ruleset
 
 		for k, v in ipairs(added) do
-			--_LOG_"Adding ruleset " .. v
+			if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Adding ruleset " .. v) end
 			t[v] = true
 		end
 
 		for k, v in pairs(added_s) do
-			--_LOG_"Adding ruleset string " .. k
+			if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Adding ruleset string " .. k) end
 
 			if not _ruleset_defs[k] then
 				local rs, err = util.parse_ruleset(v)
@@ -396,7 +396,7 @@ local function _merge_rulesets(self)
 				if err then
 					logger.fatal_fail("Could not load " .. k)
 				else
-					--_LOG_"Doing offset calculation of " .. k
+					if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Doing offset calculation of " .. k) end
 					_calculate_offset(rs)
 
 					_ruleset_defs[k] = rs
@@ -410,7 +410,7 @@ local function _merge_rulesets(self)
 		end
 
 		for k, v in ipairs(ignored) do
-			--_LOG_"Ignoring ruleset " .. v
+			if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Ignoring ruleset " .. v) end
 			t[v] = nil
 		end
 	end
@@ -428,7 +428,7 @@ end
 -- main entry point
 function _M.exec(self, opts)
 	if self._mode == "INACTIVE" then
-		--_LOG_"Operational mode is INACTIVE, not running"
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Operational mode is INACTIVE, not running") end
 		return
 	end
 
@@ -462,7 +462,7 @@ function _M.exec(self, opts)
 	-- see https://groups.google.com/forum/#!topic/openresty-en/LVR9CjRT5-Y
 	-- also https://github.com/p0pr0ck5/lua-resty-waf/issues/229
 	if ctx.altered == true and self._mode == 'ACTIVE' then
-		--_LOG_"Transaction was already altered, not running!"
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Transaction was already altered, not running!") end
 
 		if phase == 'log' then
 			self:write_log_events(true, ctx)
@@ -509,10 +509,10 @@ function _M.exec(self, opts)
 		self._storage_redis_setkey   = {}
 	end
 
-	--_LOG_"Beginning run of phase " .. phase
+	if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Beginning run of phase " .. phase) end
 
 	for _, ruleset in ipairs(self._active_rulesets) do
-		--_LOG_"Beginning ruleset " .. ruleset
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Beginning ruleset " .. ruleset) end
 
 		local rs = _ruleset_defs[ruleset]
 
@@ -523,7 +523,7 @@ function _M.exec(self, opts)
 			if err then
 				logger.fatal_fail(err)
 			else
-				--_LOG_"Doing offset calculation of " .. ruleset
+				if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Doing offset calculation of " .. ruleset) end
 				_calculate_offset(rs)
 
 				_ruleset_defs[ruleset] = rs
@@ -538,7 +538,7 @@ function _M.exec(self, opts)
 
 		while rule do
 			if not util.table_has_key(rule.id, self._ignore_rule) then
-				--_LOG_"Processing rule " .. rule.id
+				if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Processing rule " .. rule.id) end
 
 				local returned_offset = _process_rule(self, rule, collections, ctx)
 				if returned_offset then
@@ -547,7 +547,7 @@ function _M.exec(self, opts)
 					offset = nil
 				end
 			else
-				--_LOG_"Ignoring rule " .. rule.id
+				if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Ignoring rule " .. rule.id) end
 
 				local rule_nomatch = rule.offset_nomatch
 
@@ -807,12 +807,12 @@ function _M.write_log_events(self, has_ctx, ctx)
 	end
 
 	if ctx.altered ~= true and self._event_log_altered_only then
-		--_LOG_"Not logging a request that wasn't altered"
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Not logging a request that wasn't altered") end
 		return
 	end
 
 	if ctx.log_entries_n == 0 then
-		--_LOG_"Not logging a request that had no rule alerts"
+		if self._debug == true then ngx.log(self._debug_log_level, '[', self.transaction_id, '] ', "Not logging a request that had no rule alerts") end
 		return
 	end
 

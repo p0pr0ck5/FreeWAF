@@ -8,7 +8,6 @@ local iputils   = require "resty.iputils"
 local libinject = require "resty.libinjection"
 local logger    = require "resty.waf.log"
 local util      = require "resty.waf.util"
-
 local string_find = string.find
 local string_gsub = string.gsub
 local string_sub  = string.sub
@@ -24,12 +23,12 @@ local _cidr_cache = {}
 _M.version = base.version
 
 function _M.equals(a, b)
-	local equals, value
-
+	local equals, value, reason = a
 	if type(a) == "table" then
 		for _, v in ipairs(a) do
 			equals, value = _M.equals(v, b)
 			if equals then
+				reason = v
 				break
 			end
 		end
@@ -41,16 +40,17 @@ function _M.equals(a, b)
 		end
 	end
 
-	return equals, value
+	return equals, value, reason
 end
 
 function _M.greater(a, b)
-	local greater, value
+	local greater, value, reason = a
 
 	if type(a) == "table" then
 		for _, v in ipairs(a) do
 			greater, value = _M.greater(v, b)
 			if greater then
+				reason = v
 				break
 			end
 		end
@@ -62,16 +62,17 @@ function _M.greater(a, b)
 		end
 	end
 
-	return greater, value
+	return greater, value, reason
 end
 
 function _M.less(a, b)
-	local less, value
+	local less, value, reason = a
 
 	if type(a) == "table" then
 		for _, v in ipairs(a) do
 			less, value = _M.less(v, b)
 			if less then
+				reason = v
 				break
 			end
 		end
@@ -83,16 +84,17 @@ function _M.less(a, b)
 		end
 	end
 
-	return less, value
+	return less, value, reason
 end
 
 function _M.greater_equals(a, b)
-	local greater_equals, value
+	local greater_equals, value, reason = a
 
 	if type(a) == "table" then
 		for _, v in ipairs(a) do
 			greater_equals, value = _M.greater_equals(v, b)
 			if greater_equals then
+				reason = v
 				break
 			end
 		end
@@ -104,16 +106,17 @@ function _M.greater_equals(a, b)
 		end
 	end
 
-	return greater_equals, value
+	return greater_equals, value, reason
 end
 
 function _M.less_equals(a, b)
-	local less_equals, value
+	local less_equals, value, reason = a
 
 	if type(a) == "table" then
 		for _, v in ipairs(a) do
 			less_equals, value = _M.less_equals(v, b)
 			if less_equals then
+				reason = v
 				break
 			end
 		end
@@ -125,17 +128,18 @@ function _M.less_equals(a, b)
 		end
 	end
 
-	return less_equals, value
+	return less_equals, value, reason
 end
 
 function _M.exists(needle, haystack)
-	local exists, value
+	local exists, value, reason = needle
 
 	if type(needle) == "table" then
 		for _, v in ipairs(needle) do
 			exists, value = _M.exists(v, haystack)
 
 			if exists then
+				reason = v
 				break
 			end
 		end
@@ -147,17 +151,18 @@ function _M.exists(needle, haystack)
 		end
 	end
 
-	return exists, value
+	return exists, value, reason
 end
 
 function _M.contains(haystack, needle)
-	local contains, value
+	local contains, value, reason = needle
 
 	if type(needle) == "table" then
 		for _, v in ipairs(needle) do
 			contains, value = _M.contains(haystack, v)
 
 			if contains then
+				reason = v
 				break
 			end
 		end
@@ -169,17 +174,18 @@ function _M.contains(haystack, needle)
 		end
 	end
 
-	return contains, value
+	return contains, value, reason
 end
 
 function _M.str_find(waf, subject, pattern)
-	local from, to, match, value
+	local from, to, match, value, reason = subject
 
 	if type(subject) == "table" then
 		for _, v in ipairs(subject) do
 			match, value = _M.str_find(waf, v, pattern)
 
 			if match then
+				reason = v
 				break
 			end
 		end
@@ -192,18 +198,19 @@ function _M.str_find(waf, subject, pattern)
 		end
 	end
 
-	return match, value
+	return match, value, reason
 end
 
 function _M.regex(waf, subject, pattern)
 	local opts = waf._pcre_flags
-	local captures, err, match
+	local captures, err, match, reason = subject
 
 	if type(subject) == "table" then
 		for _, v in ipairs(subject) do
 			match, captures = _M.regex(waf, v, pattern)
 
 			if match then
+				reason = v
 				break
 			end
 		end
@@ -219,18 +226,19 @@ function _M.regex(waf, subject, pattern)
 		end
 	end
 
-	return match, captures
+	return match, captures, reason
 end
 
 function _M.refind(waf, subject, pattern)
 	local opts = waf._pcre_flags
-	local from, to, err, match
+	local from, to, err, match, reason = subject
 
 	if type(subject) == "table" then
 		for _, v in ipairs(subject) do
 			match, from = _M.refind(waf, v, pattern)
 
 			if match then
+				reason = v
 				break
 			end
 		end
@@ -246,12 +254,12 @@ function _M.refind(waf, subject, pattern)
 		end
 	end
 
-	return match, from
+	return match, from, reason
 end
 
 function _M.ac_lookup(needle, haystack, ctx)
 	local id = ctx.id
-	local match, _ac, value
+	local match, _ac, value, reason = needle
 
 	-- dictionary creation is expensive, so we use the id of
 	-- the rule as the key to cache the created dictionary
@@ -267,6 +275,7 @@ function _M.ac_lookup(needle, haystack, ctx)
 			match, value = _M.ac_lookup(v, haystack, ctx)
 
 			if match then
+				reason = v
 				break
 			end
 		end
@@ -279,12 +288,13 @@ function _M.ac_lookup(needle, haystack, ctx)
 		end
 	end
 
-	return match, value
+	return match, value, reason
 end
 
 function _M.cidr_match(ip, cidr_pattern)
 	local t = {}
 	local n = 1
+	local reason = ip
 
 	if type(cidr_pattern) ~= "table" then
 		cidr_pattern = { cidr_pattern }
@@ -305,15 +315,15 @@ function _M.cidr_match(ip, cidr_pattern)
 		n = n + 1
 	end
 
-	return iputils.ip_in_cidrs(ip, t), ip
+	return iputils.ip_in_cidrs(ip, t), ip, reason
 end
 
 function _M.rbl_lookup(waf, ip, rbl_srv, ctx)
 	local nameservers = ctx.nameservers
-
+	local reason = ip
 	if type(nameservers) ~= 'table' then
 		-- user probably didnt configure nameservers via set_option
-		return false, nil
+		return false, nil, reason
 	end
 
 	local resolver, err = dns:new({
@@ -322,7 +332,7 @@ function _M.rbl_lookup(waf, ip, rbl_srv, ctx)
 
 	if not resolver then
 		logger.warn(waf, err)
-		return false, nil
+		return false, nil, reason
 	end
 
 	-- id for unit test
@@ -332,83 +342,89 @@ function _M.rbl_lookup(waf, ip, rbl_srv, ctx)
 
 	if not rbl_query then
 		-- we were handed something that didn't look like an IPv4
-		return false, nil
+		return false, nil, reason
 	end
 
 	local answers, err = resolver:query(rbl_query)
 
 	if not answers then
 		logger.warn(waf, err)
-		return false, nil
+		return false, nil, reason
 	end
 
 	if answers.errcode == 3 then
 		-- errcode 3 means no lookup, so return false
-		return false, nil
+		return false, nil, reason
 	elseif answers.errcode then
 		-- we had some other type of err that we should know about
 		logger.warn(waf, "rbl lookup failure: " .. answers.errstr ..
 			" (" .. answers.errcode .. ")")
-		return false, nil
+		return false, nil, reason
 	else
 		-- we got a dns response, for now we're only going to return the first entry
 		local i, answer = next(answers)
 		if answer and type(answer) == 'table' then
-			return true, answer.address or answer.cname
+			return true, answer.address or answer.cname, reason
 		else
 			-- we didnt have any valid answers
-			return false, nil
+			return false, nil, reason
 		end
 	end
 end
 
 function _M.detect_sqli(input)
+	local reason = input
 	if type(input) == 'table' then
 		for _, v in ipairs(input) do
 			local match, value = _M.detect_sqli(v)
 
 			if match then
-				return match, value
+				reason = v
+				return match, value, reason
 			end
 		end
 	else
 		-- yes this is really just one line
 		-- libinjection.sqli has the same return values that lookup.operators expects
-		return libinject.sqli(input)
+		return libinject.sqli(input), reason
 	end
 
-	return false, nil
+	return false, nil, reason
 end
 
 function _M.detect_xss(input)
+	local reason = input
 	if type(input) == 'table' then
 		for _, v in ipairs(input) do
 			local match, value = _M.detect_xss(v)
 
 			if match then
-				return match, value
+				reason = v
+				return match, value, reason
 			end
 		end
 	else
 		-- this function only returns a boolean value
 		-- so we'll wrap the return values ourselves
 		if libinject.xss(input) then
-			return true, input
+			return true, input, reason
 		else
-			return false, nil
+			return false, nil, reason
 		end
 	end
 
-	return false, nil
+	return false, nil, reason
 end
 
 function _M.str_match(input, pattern)
+	local reason = input
 	if type(input) == 'table' then
 		for _, v in ipairs(input) do
 			local match, value = _M.str_match(v, pattern)
 
 			if match then
-				return match, value
+				reason = v
+				return match, value, reason
 			end
 		end
 	else
@@ -438,14 +454,14 @@ function _M.str_match(input, pattern)
 			k = k + char[input:sub(k, k):byte()]
 		end
 
-		return false, nil
+		return false, nil, reason
 	end
 
-	return false, nil
+	return false, nil, reason
 end
 
 function _M.verify_cc(waf, input, pattern)
-	local match, value
+	local match, value, reason = input
 	match = false
 
 	if type(input) == 'table' then
@@ -453,6 +469,7 @@ function _M.verify_cc(waf, input, pattern)
 			match, value = _M.verify_cc(waf, v, pattern)
 
 			if match then
+				reason = v
 				break
 			end
 		end
@@ -462,7 +479,7 @@ function _M.verify_cc(waf, input, pattern)
 		do
 			local m = _M.refind(waf, input, pattern)
 
-			if not m then return false, nil end
+			if not m then return false, nil, reason end
 		end
 
 		-- remove all non digits
@@ -493,7 +510,7 @@ function _M.verify_cc(waf, input, pattern)
 		end
 	end
 
-	return match, value
+	return match, value, reason
 end
 
 _M.lookup = {
