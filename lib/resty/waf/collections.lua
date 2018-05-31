@@ -70,45 +70,52 @@ _M.lookup = {
 		collections.STATUS           = ngx.status
 	end,
 	body_filter = function(waf, collections, ctx)
-		if ctx.buffers == nil then
-			ctx.buffers  = {}
-			ctx.nbuffers = 0
-		end
+                if ctx.buffers == nil then
+                        ctx.buffers  = {}
+                        ctx.nbuffers = 0
+                        ctx.res_length = 0
+                        ctx.skip_buffering = false
+                end
 
-		local data  = ngx.arg[1]
-		local eof   = ngx.arg[2]
-		local index = ctx.nbuffers + 1
+                local data  = ngx.arg[1]
+                local eof   = ngx.arg[2]
+                local index = ctx.nbuffers + 1
 
-		local res_length = tonumber(collections.RESPONSE_HEADERS["content-length"])
-		local res_type   = collections.RESPONSE_HEADERS["content-type"]
+                local res_type   = collections.RESPONSE_HEADERS["content-type"]
 
-		if not res_length or res_length > waf._res_body_max_size then
-			ctx.short_circuit = not eof
-			return
-		end
+                if not res_type or not util.table_has_key(res_type, waf._res_body_mime_types) then
+                        ctx.short_circuit = not eof
+                        return
+                end
 
-		if not res_type or not util.table_has_key(res_type, waf._res_body_mime_types) then
-			ctx.short_circuit = not eof
-			return
-		end
+                if ctx.skip_buffering then
+                        ctx.short_circuit = true
+                        return
+                else
+                        ngx.arg[1] = nil
+                end
 
-		if data then
-			ctx.buffers[index] = data
-			ctx.nbuffers = index
-		end
+                if data then
+                        ctx.buffers[index] = data
+                        ctx.nbuffers = index
+                        ctx.res_length = ctx.res_length + string.len(data)
+                end
 
-		if not eof then
-			-- Send nothing to the client yet.
-			ngx.arg[1] = nil
+                if eof or ctx.res_length > waf._res_body_max_size then
+                        ctx.skip_buffering = true
+                        local concatdata = table_concat(ctx.buffers, '')
+                        collections.RESPONSE_BODY = concatdata
+                        ngx.arg[1] = concatdata
+                else
+                        ctx.short_circuit = true
+                        return
+                end
 
-			-- no need to process further at this point
-			ctx.short_circuit = true
-			return
-		else
-			collections.RESPONSE_BODY = table_concat(ctx.buffers, '')
-			ngx.arg[1] = collections.RESPONSE_BODY
-		end
-	end,
+                if eof then
+                        ctx.short_circuit = false
+                end
+
+        end,
 	log = function() end
 }
 
