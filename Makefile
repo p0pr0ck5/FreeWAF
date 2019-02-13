@@ -15,7 +15,6 @@ OPM_LIBS   = hamishforbes/lua-resty-iputils p0pr0ck5/lua-resty-cookie \
 MAKE_LIBS  = $(C_LIBS) decode
 SO_LIBS    = libac.so libinjection.so libhtmlentities.so libdecode.so
 RULES      = rules
-ROCK_DEPS  = "lrexlib-pcre 2.7.2-1" busted luafilesystem
 
 LOCAL_LIB_DIR = lib/resty
 
@@ -55,11 +54,6 @@ clean-libs:
 
 clean-opm-libs:
 	$(OPM) --install-dir=$(OPM_LIB_DIR) remove $(OPM_LIBS)
-
-clean-rocks:
-	for ROCK in $(ROCK_DEPS); do \
-		$(LUAROCKS) remove $$ROCK; \
-	done
 
 clean-test:
 	rm -rf t/servroot*
@@ -127,15 +121,10 @@ test-fast: all
 install-check:
 	stat lib/*.so > /dev/null
 
-install-deps: install-opm-libs install-rocks
+install-deps: install-opm-libs
 
 install-opm-libs:
 	$(OPM) --install-dir=$(OPM_LIB_DIR) get $(OPM_LIBS)
-
-install-rocks:
-	for ROCK in $(ROCK_DEPS); do \
-		$(LUAROCKS) install $$ROCK; \
-	done
 
 install-link: install-check
 	$(INSTALL_SOFT) $(PWD)/lib/resty/* $(LUA_LIB_DIR)/resty/

@@ -12,8 +12,11 @@ description = {
 dependencies = {
    "lua >= 5.1",
    "luarocks-fetch-gitrec",
+   "lrexlib-pcre",
+   "busted",
+   "luafilesystem",
 }
 build = {
    type = "make",
-   install_target = "install-hard",
+   install_target = "install",
 }
