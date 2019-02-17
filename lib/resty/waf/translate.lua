@@ -1026,7 +1026,7 @@ function _M.translate_chain(chain, opts)
 			_M.translate_vars(rule, translation, opts)
 			_M.translate_operator(rule, translation, opts.path)
 		elseif directive == 'SecAction' or directive == 'SecMarker' then
-			translation.vars = { unconditional = true }
+			translation.vars = {{ unconditional = true }}
 
 			-- SecMarker is a rule that never matches
 			-- with its only action representing its ID
