@@ -58,7 +58,7 @@ clean-opm-libs:
 
 clean-rocks:
 	for ROCK in $(ROCK_DEPS); do \
-		$(LUAROCKS) remove $$ROCK; \
+		$(LUAROCKS) remove --tree=$(OPENRESTY_PREFIX) $$ROCK; \
 	done
 
 clean-test:
@@ -72,7 +72,7 @@ decode:
 	cp src/libdecode.so lib/
 
 lua-aho-corasick:
-	cd $@ && make
+	cd $@ && make PREFIX=/usr
 	cp $@/libac.so lib/
 
 lua-resty-htmlentities:
@@ -81,7 +81,7 @@ lua-resty-htmlentities:
 	cp $@/libhtmlentities.so lib/
 
 libinjection:
-	cd $@ && make
+	cd $@ && make all
 	cp $@/src/$@.so lib/
 
 test-unit:
@@ -134,7 +134,7 @@ install-opm-libs:
 
 install-rocks:
 	for ROCK in $(ROCK_DEPS); do \
-		$(LUAROCKS) install $$ROCK; \
+		$(LUAROCKS) install --tree=$(OPENRESTY_PREFIX) $$ROCK; \
 	done
 
 install-link: install-check

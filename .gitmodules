@@ -1,9 +1,9 @@
 [submodule "libinjection"]
 	path = libinjection
-	url = https://github.com/p0pr0ck5/libinjection
+	url = https://github.com/client9/libinjection
 [submodule "lua-aho-corasick"]
 	path = lua-aho-corasick
-	url = https://github.com/p0pr0ck5/lua-aho-corasick
+	url = https://github.com/cloudflare/lua-aho-corasick
 [submodule "lua-resty-htmlentities"]
 	path = lua-resty-htmlentities
 	url = https://github.com/detailyang/lua-resty-htmlentities

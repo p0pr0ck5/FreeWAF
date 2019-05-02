@@ -32,5 +32,5 @@ before_script:
     - sudo make install-link install-rocks
     - sudo luarocks install lrexlib-pcre 2.7.2-1 PCRE_LIBDIR=/lib/x86_64-linux-gnu
 script:
-    - PATH=/usr/local/openresty/nginx/sbin:$PATH prove -v --exec "$RUNNER" -r t/$TEST/*
+    - eval $(luarocks --tree=/usr/local/openresty path);PATH=/usr/local/openresty/nginx/sbin:$PATH prove -v --exec "$RUNNER" -r t/$TEST/*
     - ./tools/lua-releng -L
