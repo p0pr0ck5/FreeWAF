@@ -65,14 +65,15 @@ int js_decode(unsigned char *input, long int input_len) {
 				i += 4;
 			}
 			else if ((i + 1 < input_len) && ISODIGIT(input[i + 1])) {
+				unsigned char *orig_input = input;
 				/* \OOO (only one byte, \000 - \377) */
 				char input[4];
 				int j = 0;
 
 				while((i + 1 + j < input_len)&&(j < 3)) {
-					input[j] = input[i + 1 + j];
+					input[j] = orig_input[i + 1 + j];
 					j++;
-					if (!ISODIGIT(input[i + 1 + j])) break;
+					if (!ISODIGIT(orig_input[i + 1 + j])) break;
 				}
 				input[j] = '\0';
 
